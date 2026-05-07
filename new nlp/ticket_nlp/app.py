@@ -156,24 +156,29 @@ TEAM_MAP = {
     "Account & Access Issue": "Identity Team",
 }
 
+
 # ─────────────────────────────────────────────────────────────
 # LOAD MODELS
 # ─────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_models():
-    with open("vectorizer.pkl", "rb") as f:
+
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    with open(os.path.join(BASE_DIR, "vectorizer.pkl"), "rb") as f:
         vectorizer = pickle.load(f)
 
-    with open("model.pkl", "rb") as f:
+    with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
         model = pickle.load(f)
 
-    with open("priority_model.pkl", "rb") as f:
+    with open(os.path.join(BASE_DIR, "priority_model.pkl"), "rb") as f:
         priority_model = pickle.load(f)
 
-    with open("priority_scaler.pkl", "rb") as f:
+    with open(os.path.join(BASE_DIR, "priority_scaler.pkl"), "rb") as f:
         scaler = pickle.load(f)
 
     return vectorizer, model, priority_model, scaler
+
 
 vectorizer, model, priority_model, scaler = load_models()
 
