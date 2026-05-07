@@ -1,16 +1,17 @@
 import numpy as np
 import re
+import os
+import gdown
 from scipy.sparse import hstack
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
 from sklearn.preprocessing import MinMaxScaler
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
 import streamlit as st
-import  os 
+
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG — must be first Streamlit call
 # ─────────────────────────────────────────────────────────────
@@ -22,11 +23,10 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────
-# GLOBAL CSS  — GitHub-dark aesthetic matching the live widget
+# GLOBAL CSS
 # ─────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── base ── */
 html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     background-color: #0e1117 !important;
     color: #cdd9e5;
@@ -34,7 +34,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 [data-testid="stHeader"] { background: #0d1117; border-bottom: 0.5px solid #21262d; }
 [data-testid="stToolbar"] { display: none; }
 
-/* ── topbar ── */
 .topbar {
     background: #0d1117;
     border-bottom: 0.5px solid #21262d;
@@ -49,16 +48,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     font-size: 11px; background: #1a2a1a; color: #3fb950;
     border: 0.5px solid #238636; border-radius: 12px; padding: 2px 10px;
 }
-
-/* ── column headers ── */
 .col-header {
     font-size: 12px; color: #8b949e; display: flex; align-items: center;
     gap: 6px; border-bottom: 0.5px solid #21262d;
     padding-bottom: 10px; margin-bottom: 14px; font-weight: 500;
     letter-spacing: 0.04em;
 }
-
-/* ── chat bubbles ── */
 .bubble-user {
     background: #1c2d3d; color: #cdd9e5; font-size: 13px;
     line-height: 1.55; padding: 10px 14px;
@@ -81,8 +76,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 .ai-field { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12px; }
 .ai-label { color: #8b949e; min-width: 74px; }
 .ai-val { color: #cdd9e5; font-weight: 500; }
-
-/* ── priority pills ── */
 .pill {
     font-size: 11px; font-weight: 600; padding: 2px 9px;
     border-radius: 10px; display: inline-block;
@@ -91,12 +84,8 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 .pill-high     { background: #3d2a0a; color: #fbbf24; border: 0.5px solid #78350f; }
 .pill-medium   { background: #0d2d45; color: #60a5fa; border: 0.5px solid #1e3a5f; }
 .pill-low      { background: #0d2d1a; color: #4ade80; border: 0.5px solid #14532d; }
-
-/* ── decision row ── */
 .decision-ok   { font-size: 11px; color: #3fb950; margin-top: 6px; }
 .decision-warn { font-size: 11px; color: #d29922; margin-top: 6px; }
-
-/* ── insight cards ── */
 .icard {
     background: #161b22; border: 0.5px solid #21262d;
     border-radius: 8px; padding: 10px 13px; margin-bottom: 9px;
@@ -108,29 +97,19 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 .icard-val { font-size: 13px; color: #cdd9e5; font-weight: 500; }
 .conf-track { background: #21262d; border-radius: 3px; height: 5px; margin-top: 7px; }
 .conf-fill  { height: 5px; border-radius: 3px; background: #1f6feb; }
-
-/* ── entity table ── */
 .etable { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 4px; }
 .etable td { padding: 3px 0; }
 .etable td:first-child { color: #8b949e; }
 .etable td:last-child  { text-align: right; color: #79c0ff; }
-
-/* ── expanders ── */
 [data-testid="stExpander"] {
     background: #161b22 !important;
     border: 0.5px solid #21262d !important;
     border-radius: 8px !important;
     margin-bottom: 8px !important;
 }
-[data-testid="stExpander"] summary {
-    font-size: 12px !important; color: #8b949e !important;
-}
+[data-testid="stExpander"] summary { font-size: 12px !important; color: #8b949e !important; }
 [data-testid="stExpander"] p,
-[data-testid="stExpander"] div {
-    font-size: 12px !important; color: #8b949e !important;
-}
-
-/* ── chat input ── */
+[data-testid="stExpander"] div     { font-size: 12px !important; color: #8b949e !important; }
 [data-testid="stChatInput"] textarea {
     background: #161b22 !important;
     border: 0.5px solid #30363d !important;
@@ -138,11 +117,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     color: #cdd9e5 !important;
     font-size: 13px !important;
 }
-[data-testid="stChatInput"] textarea:focus {
-    border-color: #1f6feb !important;
-}
-
-/* ── hide streamlit chrome ── */
+[data-testid="stChatInput"] textarea:focus { border-color: #1f6feb !important; }
 #MainMenu { visibility: hidden; }
 footer    { visibility: hidden; }
 </style>
@@ -208,10 +183,60 @@ TEAM_MAP = {
     "Cancellation Request":          "Retention Team",
 }
 
+# ─────────────────────────────────────────────────────────────
+# GOOGLE DRIVE DATASET LINK & FILE ID
+# Drive link : https://drive.google.com/file/d/1Hahmz8xCREkriay4RDssA0jl2S3Bb48h/view?usp=drive_link
+# ─────────────────────────────────────────────────────────────
+GDRIVE_FILE_ID = "1Hahmz8xCREkriay4RDssA0jl2S3Bb48h"
+DATA_PATH      = "data/combined_tickets.csv"
+
 
 # ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
+def download_data():
+    """Download dataset from Google Drive if not already present."""
+    if not os.path.exists(DATA_PATH):
+        os.makedirs("data", exist_ok=True)
+        url = "https://drive.google.com/uc?id=1Hahmz8xCREkriay4RDssA0jl2S3Bb48h"
+        gdown.download(url, DATA_PATH, quiet=False)
+
+
+
+def detect_and_rename(df):
+    """
+    Auto-detect text and label columns regardless of CSV column names.
+    Supports: 'Ticket Description'/'Ticket Type', 'Document'/'Topic_group',
+              'text'/'label', or any first two string columns.
+    """
+    df.columns = df.columns.str.strip()
+    col_map = {}
+
+    # known text column names
+    for c in df.columns:
+        cl = c.lower().strip()
+        if cl in ["ticket description", "document", "text", "description", "body", "message", "content"]:
+            col_map["text"] = c
+            break
+
+    # known label column names
+    for c in df.columns:
+        cl = c.lower().strip()
+        if cl in ["ticket type", "topic_group", "label", "category", "class", "type"]:
+            col_map["label"] = c
+            break
+
+    # fallback: pick first two string columns
+    if "text" not in col_map or "label" not in col_map:
+        str_cols = [c for c in df.columns if df[c].dtype == object]
+        if len(str_cols) >= 2:
+            if "text"  not in col_map: col_map["text"]  = str_cols[0]
+            if "label" not in col_map: col_map["label"] = str_cols[1]
+
+    df = df.rename(columns={col_map["text"]: "text", col_map["label"]: "label"})
+    return df[["text", "label"]].dropna()
+
+
 def fast_clean(texts):
     cleaned = []
     for t in texts:
@@ -286,72 +311,75 @@ def extract_entities(text):
     platform_map = {"aws": "AWS", "azure": "Azure", "windows": "Windows", "linux": "Linux"}
     module   = next((v for k, v in module_map.items()   if k in t), None)
     platform = next((v for k, v in platform_map.items() if k in t), None)
-    if "crash" in t:                       issue = "Crash"
-    elif "slow" in t:                      issue = "Performance"
-    elif "error" in t:                     issue = "Error"
+    if "crash" in t:                        issue = "Crash"
+    elif "slow" in t:                       issue = "Performance"
+    elif "error" in t:                      issue = "Error"
     elif "down" in t or "not working" in t: issue = "Failure"
-    else:                                  issue = None
+    else:                                   issue = None
     return {"Module": module, "Platform": platform, "Issue": issue}
 
 
 # ─────────────────────────────────────────────────────────────
 # LOAD & TRAIN  (cached — runs once per session)
 # ─────────────────────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading models… this takes ~30 s on first run")
+@st.cache_resource
 def load_and_train():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    df1 = pd.read_csv(os.path.join(base_dir, "data", "customer_support_tickets.csv"))
-    df2 = pd.read_csv(os.path.join(base_dir, "data", "all_tickets_processed_improved_v3.csv"))
-    df1.columns = df1.columns.str.strip()
-    df2.columns = df2.columns.str.strip()
+    # ── 1. Download dataset from Google Drive ──
+    download_data()
 
-    # df1 = customer_support_tickets  → "Ticket Description" / "Ticket Type"
-    # df2 = all_tickets_processed     → "Document" / "Topic_group"
-    df1 = df1.rename(columns={"Ticket Description": "text", "Ticket Type": "label"})
-    df2 = df2.rename(columns={"Document": "text", "Topic_group": "label"})
+    # ── 2. Load & normalise columns ──
+    final_df = pd.read_csv(DATA_PATH)
+    final_df = detect_and_rename(final_df)
+    final_df["text"] = final_df["text"].fillna("")
 
-    df1 = df1[["text", "label"]].dropna()
-    df2 = df2[["text", "label"]].dropna()
-    final_df = pd.concat([df1, df2], ignore_index=True)
+    # ── 3. Sample to stay within Streamlit Cloud memory (≤ 1 GB) ──
+    if len(final_df) > 15000:
+        final_df = final_df.sample(15000, random_state=42).reset_index(drop=True)
 
-    final_df["text"]       = final_df["text"].fillna("")
     final_df["clean_text"] = fast_clean(final_df["text"])
 
-    vectorizer = TfidfVectorizer(max_features=3000, ngram_range=(1, 1),
-                                 min_df=2, max_df=0.9, stop_words="english")
+    # ── 4. TF-IDF vectoriser ──
+    vectorizer = TfidfVectorizer(
+        max_features=3000, ngram_range=(1, 1),
+        min_df=2, max_df=0.9, stop_words="english"
+    )
     vectorizer.fit(final_df["clean_text"])
 
-    # category model
+    # ── 5. Category model ──
     X_cat = vectorizer.transform(final_df["clean_text"])
     X_tr_c, X_te_c, y_tr_c, y_te_c = train_test_split(
-        X_cat, final_df["label"], test_size=0.2, random_state=42)
+        X_cat, final_df["label"], test_size=0.2, random_state=42
+    )
     model = LogisticRegression(max_iter=1000, class_weight="balanced", n_jobs=-1)
     model.fit(X_tr_c, y_tr_c)
 
-    # priority labels
+    # ── 6. Priority labels & model ──
     final_df["priority"] = final_df.apply(assign_priority_label_smart, axis=1)
 
-    # priority model
     X_train, X_test, y_train, y_test, cat_train, cat_test = train_test_split(
         final_df["text"], final_df["priority"], final_df["label"],
-        test_size=0.2, random_state=42)
+        test_size=0.2, random_state=42
+    )
     X_train_vec, scaler = build_priority_features(X_train, cat_train, vectorizer, fit=True)
     X_test_vec,  _      = build_priority_features(X_test,  cat_test,  vectorizer, scaler=scaler)
     priority_model = LogisticRegression(max_iter=1000, class_weight="balanced")
     priority_model.fit(X_train_vec, y_train)
 
-    # SBERT
-    sbert             = SentenceTransformer("all-MiniLM-L6-v2")
-    ticket_embeddings = sbert.encode(final_df["text"].tolist(), show_progress_bar=False)
+    # ── 7. SBERT — encode only a 2000-row sample to save RAM ──
+    sbert     = SentenceTransformer("all-MiniLM-L6-v2")
+    sbert_df  = final_df.sample(min(2000, len(final_df)), random_state=42).reset_index(drop=True)
+    ticket_embeddings = sbert.encode(
+        sbert_df["text"].tolist(), show_progress_bar=False, batch_size=64
+    )
 
-    return vectorizer, model, priority_model, scaler, sbert, ticket_embeddings, final_df
+    return vectorizer, model, priority_model, scaler, sbert, ticket_embeddings, sbert_df
 
 
 vectorizer, model, priority_model, scaler, sbert, ticket_embeddings, final_df = load_and_train()
 
 
 # ─────────────────────────────────────────────────────────────
-# PREDICT  — returns a dict
+# PREDICT
 # ─────────────────────────────────────────────────────────────
 def predict_full(ticket: str) -> dict:
     vec = vectorizer.transform([ticket])
@@ -364,7 +392,7 @@ def predict_full(ticket: str) -> dict:
     category   = rule_label if rule_label != "General Support" else model_label
 
     X_p, _   = build_priority_features([ticket], [category], vectorizer, scaler=scaler)
-    priority = priority_model.predict(X_p)[0]
+    priority  = priority_model.predict(X_p)[0]
 
     team         = get_team(category, priority)
     routing_conf = round(confidence * 0.95, 1)
@@ -424,31 +452,26 @@ def render_ai_bubble(r: dict) -> str:
 
 
 def render_insights(r: dict):
-    """Render the right-hand insights panel using Streamlit + inline HTML."""
     conf_w = int(r["confidence"])
 
-    # priority badge
     st.markdown(f"""
     <div class="icard">
       <div class="icard-label">Priority</div>
       {priority_pill(r['priority'])}
     </div>""", unsafe_allow_html=True)
 
-    # category
     st.markdown(f"""
     <div class="icard">
       <div class="icard-label">Category</div>
       <div class="icard-val" style="font-size:12px;">{r['category']}</div>
     </div>""", unsafe_allow_html=True)
 
-    # team
     st.markdown(f"""
     <div class="icard">
       <div class="icard-label">Assigned team</div>
       <div class="icard-val" style="font-size:12px;">{r['team']}</div>
     </div>""", unsafe_allow_html=True)
 
-    # confidence bar
     st.markdown(f"""
     <div class="icard">
       <div class="icard-label">Confidence</div>
@@ -456,7 +479,6 @@ def render_insights(r: dict):
       <div class="conf-track"><div class="conf-fill" style="width:{conf_w}%"></div></div>
     </div>""", unsafe_allow_html=True)
 
-    # entities
     ent = r["entities"]
     st.markdown(f"""
     <div class="icard">
@@ -468,7 +490,6 @@ def render_insights(r: dict):
       </table>
     </div>""", unsafe_allow_html=True)
 
-    # expanders
     with st.expander("🧠 Similar tickets"):
         for t in r["similar"]:
             snippet = t[:140] + ("…" if len(t) > 140 else "")
@@ -478,7 +499,6 @@ def render_insights(r: dict):
         for s in r["solutions"]:
             st.write(f"– {s}")
 
-    # routing decision
     dec_cls  = "decision-ok"   if r["decision"] == "Auto Assigned" else "decision-warn"
     dec_icon = "✔"             if r["decision"] == "Auto Assigned" else "⚠"
     st.markdown(
@@ -499,14 +519,10 @@ if "last_result" not in st.session_state: st.session_state.last_result = None
 # ─────────────────────────────────────────────────────────────
 chat_col, info_col = st.columns([2, 1], gap="medium")
 
-# ── LEFT: CHAT ───────────────────────────────────────────────
+# ── LEFT: CHAT ──
 with chat_col:
-    st.markdown(
-        '<div class="col-header">💬 Conversation</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div class="col-header">💬 Conversation</div>', unsafe_allow_html=True)
 
-    # welcome message on first load
     if not st.session_state.messages:
         st.markdown("""
         <div class="bubble-ai-wrap">
@@ -517,44 +533,29 @@ with chat_col:
           </div>
         </div>""", unsafe_allow_html=True)
 
-    # render history
     for msg in st.session_state.messages:
         if msg["role"] == "user":
-            st.markdown(
-                f'<div class="bubble-user">{msg["content"]}</div>',
-                unsafe_allow_html=True
-            )
+            st.markdown(f'<div class="bubble-user">{msg["content"]}</div>', unsafe_allow_html=True)
         else:
             st.markdown(msg["content"], unsafe_allow_html=True)
 
-    # input
     user_input = st.chat_input("Describe your issue…")
 
     if user_input:
-        # save & show user bubble
         st.session_state.messages.append({"role": "user", "content": user_input})
-        st.markdown(
-            f'<div class="bubble-user">{user_input}</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="bubble-user">{user_input}</div>', unsafe_allow_html=True)
 
-        # analyze
         with st.spinner("Analyzing ticket…"):
             result = predict_full(user_input)
 
         st.session_state.last_result = result
-
-        # render AI bubble
         ai_html = render_ai_bubble(result)
         st.markdown(ai_html, unsafe_allow_html=True)
         st.session_state.messages.append({"role": "assistant", "content": ai_html})
 
-# ── RIGHT: INSIGHTS ──────────────────────────────────────────
+# ── RIGHT: INSIGHTS ──
 with info_col:
-    st.markdown(
-        '<div class="col-header">📊 Ticket insights</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div class="col-header">📊 Ticket insights</div>', unsafe_allow_html=True)
 
     if st.session_state.last_result:
         render_insights(st.session_state.last_result)
