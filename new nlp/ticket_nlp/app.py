@@ -195,25 +195,46 @@ def assign_label(text):
     return "General Support"
 
 def build_priority_features(texts, categories, vectorizer, scaler):
+
     tfidf_feats = vectorizer.transform(texts)
 
     extra = []
 
     for text, cat in zip(texts, categories):
+
         t = str(text).lower()
         words = t.split()
 
         length = min(len(words) / 60.0, 1.0)
+
         severity = CATEGORY_SEVERITY.get(cat, 0.2)
 
         urgency = sum([
             1 if w in t else 0
-            for w in ["urgent", "critical", "down", "not working"]
+            for w in [
+                "urgent",
+                "critical",
+                "down",
+                "not working"
+            ]
         ]) / 4
 
-        extra.append([length, severity, urgency])
+        exclamation = text.count("!") / max(len(text), 1)
+
+        caps_ratio = sum(
+            1 for w in words if w.isupper()
+        ) / max(len(words), 1)
+
+        extra.append([
+            length,
+            severity,
+            urgency,
+            exclamation,
+            caps_ratio
+        ])
 
     extra = np.array(extra)
+
     extra_scaled = scaler.transform(extra)
 
     return hstack([tfidf_feats, extra_scaled])
