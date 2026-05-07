@@ -184,8 +184,8 @@ TEAM_MAP = {
 }
 
 # ─────────────────────────────────────────────────────────────
-# GOOGLE DRIVE DATASET LINK & FILE ID
-# Drive link : https://drive.google.com/file/d/1Hahmz8xCREkriay4RDssA0jl2S3Bb48h/view?usp=drive_link
+# GOOGLE DRIVE DATASET
+# Drive link: https://drive.google.com/file/d/1Hahmz8xCREkriay4RDssA0jl2S3Bb48h/view?usp=drive_link
 # ─────────────────────────────────────────────────────────────
 GDRIVE_FILE_ID = "1Hahmz8xCREkriay4RDssA0jl2S3Bb48h"
 DATA_PATH      = "data/combined_tickets.csv"
@@ -202,31 +202,23 @@ def download_data():
         gdown.download(url, DATA_PATH, quiet=False)
 
 
-
 def detect_and_rename(df):
-    """
-    Auto-detect text and label columns regardless of CSV column names.
-    Supports: 'Ticket Description'/'Ticket Type', 'Document'/'Topic_group',
-              'text'/'label', or any first two string columns.
-    """
+    """Auto-detect text and label columns regardless of CSV column names."""
     df.columns = df.columns.str.strip()
     col_map = {}
 
-    # known text column names
     for c in df.columns:
         cl = c.lower().strip()
         if cl in ["ticket description", "document", "text", "description", "body", "message", "content"]:
             col_map["text"] = c
             break
 
-    # known label column names
     for c in df.columns:
         cl = c.lower().strip()
         if cl in ["ticket type", "topic_group", "label", "category", "class", "type"]:
             col_map["label"] = c
             break
 
-    # fallback: pick first two string columns
     if "text" not in col_map or "label" not in col_map:
         str_cols = [c for c in df.columns if df[c].dtype == object]
         if len(str_cols) >= 2:
@@ -320,57 +312,47 @@ def extract_entities(text):
 
 
 # ─────────────────────────────────────────────────────────────
-# LOAD & TRAIN  (cached — runs once per session)
+# LOAD & TRAIN
 # ─────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_and_train():
-    # ── 1. Download dataset from Google Drive ──
     download_data()
 
-    # ── 2. Load & normalise columns ──
     final_df = pd.read_csv(DATA_PATH)
     final_df = detect_and_rename(final_df)
     final_df["text"] = final_df["text"].fillna("")
 
-    # ── 3. Sample to stay within Streamlit Cloud memory (≤ 1 GB) ──
     if len(final_df) > 15000:
         final_df = final_df.sample(15000, random_state=42).reset_index(drop=True)
 
     final_df["clean_text"] = fast_clean(final_df["text"])
 
-    # ── 4. TF-IDF vectoriser ──
     vectorizer = TfidfVectorizer(
         max_features=3000, ngram_range=(1, 1),
         min_df=2, max_df=0.9, stop_words="english"
     )
     vectorizer.fit(final_df["clean_text"])
 
-    # ── 5. Category model ──
     X_cat = vectorizer.transform(final_df["clean_text"])
     X_tr_c, X_te_c, y_tr_c, y_te_c = train_test_split(
-        X_cat, final_df["label"], test_size=0.2, random_state=42
-    )
+        X_cat, final_df["label"], test_size=0.2, random_state=42)
     model = LogisticRegression(max_iter=1000, class_weight="balanced", n_jobs=-1)
     model.fit(X_tr_c, y_tr_c)
 
-    # ── 6. Priority labels & model ──
     final_df["priority"] = final_df.apply(assign_priority_label_smart, axis=1)
 
     X_train, X_test, y_train, y_test, cat_train, cat_test = train_test_split(
         final_df["text"], final_df["priority"], final_df["label"],
-        test_size=0.2, random_state=42
-    )
+        test_size=0.2, random_state=42)
     X_train_vec, scaler = build_priority_features(X_train, cat_train, vectorizer, fit=True)
     X_test_vec,  _      = build_priority_features(X_test,  cat_test,  vectorizer, scaler=scaler)
     priority_model = LogisticRegression(max_iter=1000, class_weight="balanced")
     priority_model.fit(X_train_vec, y_train)
 
-    # ── 7. SBERT — encode only a 2000-row sample to save RAM ──
-    sbert     = SentenceTransformer("all-MiniLM-L6-v2")
-    sbert_df  = final_df.sample(min(2000, len(final_df)), random_state=42).reset_index(drop=True)
+    sbert    = SentenceTransformer("all-MiniLM-L6-v2")
+    sbert_df = final_df.sample(min(2000, len(final_df)), random_state=42).reset_index(drop=True)
     ticket_embeddings = sbert.encode(
-        sbert_df["text"].tolist(), show_progress_bar=False, batch_size=64
-    )
+        sbert_df["text"].tolist(), show_progress_bar=False, batch_size=64)
 
     return vectorizer, model, priority_model, scaler, sbert, ticket_embeddings, sbert_df
 
@@ -382,8 +364,7 @@ vectorizer, model, priority_model, scaler, sbert, ticket_embeddings, final_df = 
 # PREDICT
 # ─────────────────────────────────────────────────────────────
 def predict_full(ticket: str) -> dict:
-    vec = vectorizer.transform([ticket])
-
+    vec         = vectorizer.transform([ticket])
     model_label = model.predict(vec)[0]
     probs       = model.predict_proba(vec)[0]
     confidence  = round(float(max(probs)) * 100, 1)
@@ -519,7 +500,6 @@ if "last_result" not in st.session_state: st.session_state.last_result = None
 # ─────────────────────────────────────────────────────────────
 chat_col, info_col = st.columns([2, 1], gap="medium")
 
-# ── LEFT: CHAT ──
 with chat_col:
     st.markdown('<div class="col-header">💬 Conversation</div>', unsafe_allow_html=True)
 
@@ -553,7 +533,6 @@ with chat_col:
         st.markdown(ai_html, unsafe_allow_html=True)
         st.session_state.messages.append({"role": "assistant", "content": ai_html})
 
-# ── RIGHT: INSIGHTS ──
 with info_col:
     st.markdown('<div class="col-header">📊 Ticket insights</div>', unsafe_allow_html=True)
 
