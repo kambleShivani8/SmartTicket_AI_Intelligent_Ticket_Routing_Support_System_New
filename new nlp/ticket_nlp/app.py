@@ -248,42 +248,69 @@ def get_team(label, priority=None):
     return base
 
 def extract_entities(text):
+
     t = text.lower()
 
     module = None
     platform = None
     issue = None
 
-    if "server" in t:
+    # MODULE DETECTION
+    if any(k in t for k in ["server", "production", "backend", "hosting"]):
         module = "Server"
 
-    if "database" in t:
+    elif any(k in t for k in ["database", "sql", "mysql", "postgres"]):
         module = "Database"
 
-    if "vpn" in t:
+    elif any(k in t for k in ["vpn", "network", "wifi", "internet"]):
         module = "VPN"
 
+    elif any(k in t for k in ["api", "endpoint"]):
+        module = "API"
+
+    elif any(k in t for k in ["application", "software", "app"]):
+        module = "Application"
+
+    # PLATFORM DETECTION
     if "aws" in t:
         platform = "AWS"
 
-    if "windows" in t:
+    elif "azure" in t:
+        platform = "Azure"
+
+    elif "windows" in t:
         platform = "Windows"
 
-    if "crash" in t:
+    elif "linux" in t:
+        platform = "Linux"
+
+    # ISSUE DETECTION
+    if any(k in t for k in [
+        "down", "not working", "failed",
+        "failure", "unreachable"
+    ]):
+        issue = "Failure"
+
+    elif any(k in t for k in [
+        "crash", "crashed", "stopped"
+    ]):
         issue = "Crash"
 
-    elif "slow" in t:
+    elif any(k in t for k in [
+        "slow", "latency", "lag"
+    ]):
         issue = "Performance"
 
-    elif "error" in t:
+    elif any(k in t for k in [
+        "error", "bug", "exception"
+    ]):
         issue = "Error"
 
     return {
-        "Module": module,
-        "Platform": platform,
-        "Issue": issue
+        "Module": module if module else "N/A",
+        "Platform": platform if platform else "N/A",
+        "Issue": issue if issue else "N/A"
     }
-
 # ─────────────────────────────────────────────────────────────
 # FAST PREDICTION
 # ─────────────────────────────────────────────────────────────
@@ -336,19 +363,18 @@ def predict_full(ticket: str):
         "Server outage reported earlier",
         "Related support request found"
     ]
-
     return {
-        "category": category,
-        "priority": priority,
-        "team": team,
-        "confidence": confidence,
-        "routing_conf": routing_conf,
-        "similar": similar,
-        "solutions": solutions,
-        "entities": entities,
-        "decision": decision,
-    }
-
+    "ticket": ticket,
+    "category": category,
+    "priority": priority,
+    "team": team,
+    "confidence": confidence,
+    "routing_conf": routing_conf,
+    "similar": similar,
+    "solutions": solutions,
+    "entities": entities,
+    "decision": decision,
+}
 # ─────────────────────────────────────────────────────────────
 # UI HELPERS
 # ─────────────────────────────────────────────────────────────
@@ -365,38 +391,86 @@ def priority_pill(p: str):
 
 def render_ai_bubble(r: dict):
 
-    dec_cls = (
-        "decision-ok"
-        if r["decision"] == "Auto Assigned"
-        else "decision-warn"
-    )
+    priority_icon = {
+        "Critical": "🔴",
+        "High": "🟠",
+        "Medium": "🔵",
+        "Low": "🟢"
+    }
 
-    dec_icon = (
+    decision_icon = (
         "✔"
         if r["decision"] == "Auto Assigned"
         else "⚠"
     )
 
+    similar_text = "\n".join([
+        f"{i+1}. {t}"
+        for i, t in enumerate(r["similar"])
+    ])
+
+    solution_text = "\n".join([
+        f"- {s}"
+        for s in r["solutions"]
+    ])
+
+    report = f"""
+🎫 Intelligent Ticket Analysis Report
+
+🧾 Ticket:
+"{r['ticket']}"
+
+--------------------------------------------------
+
+📌 Category:
+{r['category']}
+
+🏢 Assigned Team:
+{r['team']}
+
+⚠️ Priority:
+{priority_icon.get(r['priority'], '🔵')} {r['priority'].upper()}
+
+Confidence:
+Category → {r['confidence']}%
+Routing  → {r['routing_conf']}%
+
+--------------------------------------------------
+
+🧠 Similar Tickets:
+{similar_text}
+
+--------------------------------------------------
+
+💡 Past Resolutions:
+{solution_text}
+
+--------------------------------------------------
+
+⚙️ Routing Decision:
+{decision_icon} {r['decision']}
+
+==================================================
+"""
+
     return f"""
 <div class="bubble-ai-wrap">
-  <div class="ai-avatar">🤖</div>
-  <div class="bubble-ai">
-    <div class="ai-field"><span class="ai-label">Category</span>
-      <span class="ai-val">{r['category']}</span></div>
+    <div class="ai-avatar">🤖</div>
 
-    <div class="ai-field"><span class="ai-label">Priority</span>
-      {priority_pill(r['priority'])}</div>
+    <div class="bubble-ai">
 
-    <div class="ai-field"><span class="ai-label">Team</span>
-      <span class="ai-val">{r['team']}</span></div>
+        <pre style="
+            white-space: pre-wrap;
+            color: #cdd9e5;
+            font-size: 13px;
+            line-height: 1.7;
+            font-family: Consolas, monospace;
+            background: transparent;
+            border: none;
+            margin: 0;
+        ">{report}</pre>
 
-    <div class="ai-field"><span class="ai-label">Confidence</span>
-      <span class="ai-val">{r['confidence']}%</span></div>
-
-    <div class="{dec_cls}">
-      {dec_icon} {r['decision']}
     </div>
-  </div>
 </div>
 """
 
