@@ -1,10 +1,10 @@
-streamlit
+streamlit>=1.28.0
 pandas
 numpy
 scikit-learn
 scipy
-spacy
-sentence-transformers
-torch --index-url https://download.pytorch.org/whl/cpu
 gdown
+torch==2.0.1+cpu --find-links https://download.pytorch.org/whl/torch_stable.html
+sentence-transformers==2.2.2
+
  
