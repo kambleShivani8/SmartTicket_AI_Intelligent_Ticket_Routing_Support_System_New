@@ -105,9 +105,21 @@ html, body,
 .etable               { width:100%; border-collapse:collapse; font-size:12px; margin-top:2px; }
 .etable tr            { border-bottom:1px solid #161b22; }
 .etable tr:last-child { border-bottom:none; }
-.etable td            { padding:4px 2px; }
-.etable td:first-child { color:#6e7681; width:60%; }
-.etable td:last-child  { color:#79c0ff; font-family:'JetBrains Mono',monospace; text-align:right; }
+.etable td            { padding:6px 2px; vertical-align: middle; }
+.etable td:first-child { color:#6e7681; width:40%; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+.etable td:last-child  { color:#79c0ff; font-family:'JetBrains Mono',monospace; text-align:right; font-size:12px; }
+
+/* ── entity badge ── */
+.ent-badge {
+    display: inline-block;
+    background: #0d1f35;
+    border: 1px solid #1f6feb44;
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: #79c0ff;
+    font-family: 'JetBrains Mono', monospace;
+}
 
 /* ── decisions ── */
 .dec-ok   { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#3fb950; background:#0d2010; border:1px solid #1a4726; border-radius:6px; padding:3px 9px; }
@@ -295,62 +307,141 @@ def get_team(label: str, priority: str = None) -> str:
 
 
 def extract_entities(text: str, category: str = "") -> dict:
-    t = text.lower()
+    """
+    Robustly detect Module, Platform, and Issue from ticket text + category.
+    Falls back gracefully so no field is ever blank or 'N/A'.
+    """
+    t = str(text).lower()
 
-    module = (
-        "Server"          if any(k in t for k in ["server","production","backend","hosting"]) else
-        "Database"        if any(k in t for k in ["database","sql","mysql","postgres","db"]) else
-        "VPN"             if any(k in t for k in ["vpn","network","wifi","internet","firewall"]) else
-        "API"             if any(k in t for k in ["api","endpoint","webhook","rest"]) else
-        "Application"     if any(k in t for k in ["application","software","app","program","tool"]) else
-        "Auth Module"     if any(k in t for k in ["login","password","account","reset","credentials","sign in","2fa","mfa"]) else
-        "Billing"         if any(k in t for k in ["billing","invoice","payment","refund","charge"]) else
-        "Hardware"        if any(k in t for k in ["hardware","printer","laptop","monitor","keyboard","device"]) else
-        "Auth Module"     if "Account"        in category else
-        "Core System"     if "Infrastructure" in category else
-        "Network Layer"   if "Network"        in category else
-        "App Layer"       if "Software"       in category else
-        "IT Hardware"     if "Hardware"       in category else
-        "Finance System"  if "Billing"        in category else
-        "Security Layer"  if "Security"       in category else
-        "Support System"
-    )
+    # ── MODULE ──────────────────────────────────────────────
+    if any(k in t for k in ["server", "production", "backend", "hosting", "infra"]):
+        module = "Server"
+    elif any(k in t for k in ["database", "sql", "mysql", "postgres", "db", "mongo", "redis"]):
+        module = "Database"
+    elif any(k in t for k in ["vpn", "network", "wifi", "internet", "firewall", "router"]):
+        module = "VPN / Network"
+    elif any(k in t for k in ["api", "endpoint", "webhook", "rest", "graphql", "request"]):
+        module = "API Gateway"
+    elif any(k in t for k in ["login", "password", "account", "reset", "credentials",
+                                "sign in", "signin", "2fa", "mfa", "authenticate", "auth",
+                                "locked", "access denied"]):
+        module = "Auth Module"
+    elif any(k in t for k in ["application", "software", "app", "program", "tool",
+                               "crash", "bug", "install", "update", "patch", "version"]):
+        module = "Application"
+    elif any(k in t for k in ["billing", "invoice", "payment", "refund", "charge",
+                               "subscription", "overcharged", "receipt"]):
+        module = "Billing"
+    elif any(k in t for k in ["hardware", "printer", "laptop", "monitor", "keyboard",
+                               "mouse", "device", "screen", "battery", "cable"]):
+        module = "Hardware"
+    elif any(k in t for k in ["email", "mail", "outlook", "gmail", "smtp", "imap"]):
+        module = "Email"
+    elif any(k in t for k in ["storage", "disk", "drive", "s3", "bucket", "file", "upload"]):
+        module = "Storage"
+    else:
+        # fall back to category-derived module
+        _cat_module = {
+            "Server & Infrastructure Issue": "Core Infrastructure",
+            "Network & VPN Issue":           "Network Layer",
+            "Account & Access Issue":        "Auth Module",
+            "Software & App Issue":          "Application Layer",
+            "Hardware Issue":                "IT Hardware",
+            "Billing & Payment Issue":       "Finance System",
+            "Security Issue":                "Security Layer",
+            "Setup & Configuration Issue":   "Config System",
+            "Shipping & Delivery Issue":     "Logistics System",
+            "Cancellation Request":          "Subscription Module",
+            "General Support":               "Support System",
+        }
+        module = _cat_module.get(category, "Support System")
 
-    platform = (
-        "AWS"          if "aws"          in t else
-        "Azure"        if "azure"        in t else
-        "GCP"          if "gcp"          in t or "google cloud" in t else
-        "Windows"      if "windows"      in t else
-        "Linux"        if "linux"        in t else
-        "macOS"        if "macos"        in t or "mac os" in t else
-        "On-Premise"   if any(k in t for k in ["on-prem","on premise","local","datacenter"]) else
-        "Web Browser"  if any(k in t for k in ["browser","chrome","firefox","safari","edge"]) else
-        "Mobile"       if any(k in t for k in ["mobile","android","ios","iphone","phone"]) else
-        "Cloud Infra"   if "Infrastructure" in category else
-        "Internal VPN"  if "Network"        in category else
-        "Corporate IT"  if "Hardware"       in category else
-        "Web Platform"  if "Software"       in category else
-        "Web Platform"  if "Account"        in category else
-        "Cloud Platform"
-    )
+    # ── PLATFORM ────────────────────────────────────────────
+    if "aws" in t or "amazon web" in t or "ec2" in t or "lambda" in t or "s3" in t:
+        platform = "AWS"
+    elif "azure" in t or "microsoft cloud" in t:
+        platform = "Azure"
+    elif "gcp" in t or "google cloud" in t or "bigquery" in t:
+        platform = "GCP"
+    elif "windows" in t or "win10" in t or "win11" in t:
+        platform = "Windows"
+    elif "linux" in t or "ubuntu" in t or "debian" in t or "centos" in t or "rhel" in t:
+        platform = "Linux"
+    elif "macos" in t or "mac os" in t or "osx" in t or "macbook" in t:
+        platform = "macOS"
+    elif any(k in t for k in ["on-prem", "on premise", "on-premise", "datacenter", "local server"]):
+        platform = "On-Premise"
+    elif any(k in t for k in ["chrome", "firefox", "safari", "edge", "browser", "web app", "webapp"]):
+        platform = "Web Browser"
+    elif any(k in t for k in ["android", "ios", "iphone", "ipad", "mobile", "phone", "tablet"]):
+        platform = "Mobile"
+    elif any(k in t for k in ["docker", "kubernetes", "k8s", "container", "pod", "helm"]):
+        platform = "Kubernetes"
+    elif any(k in t for k in ["slack", "teams", "jira", "confluence", "notion"]):
+        platform = "SaaS Platform"
+    else:
+        # fall back to category-derived platform
+        _cat_platform = {
+            "Server & Infrastructure Issue": "Cloud Infrastructure",
+            "Network & VPN Issue":           "Internal VPN",
+            "Account & Access Issue":        "Identity Platform",
+            "Software & App Issue":          "Web / Desktop App",
+            "Hardware Issue":                "Corporate IT",
+            "Billing & Payment Issue":       "Finance Platform",
+            "Security Issue":                "Security Platform",
+            "Setup & Configuration Issue":   "Internal Systems",
+            "Shipping & Delivery Issue":     "Logistics Platform",
+            "Cancellation Request":          "Customer Portal",
+            "General Support":               "Support Portal",
+        }
+        platform = _cat_platform.get(category, "Support Portal")
 
-    issue = (
-        "Failure"          if any(k in t for k in ["down","not working","failed","failure","unreachable","unavailable","offline"]) else
-        "Crash"            if any(k in t for k in ["crash","crashed","stopped","freezing","hangs"]) else
-        "Performance"      if any(k in t for k in ["slow","latency","lag","timeout","high load","unresponsive"]) else
-        "Auth Failure"     if any(k in t for k in ["login","password","reset","credentials","locked","access denied","unable to"]) else
-        "Error"            if any(k in t for k in ["error","bug","exception","invalid","broken"]) else
-        "Access Block"     if any(k in t for k in ["cannot","can't","blocked","locked","restricted"]) else
-        "Data Issue"       if any(k in t for k in ["missing","incorrect","wrong","corrupt","lost"]) else
-        "Service Down"     if "Infrastructure" in category else
-        "Auth Failure"     if "Account"        in category else
-        "Connectivity"     if "Network"        in category else
-        "App Malfunction"  if "Software"       in category else
-        "Device Fault"     if "Hardware"       in category else
-        "Payment Error"    if "Billing"        in category else
-        "Security Breach"  if "Security"       in category else
-        "General Fault"
-    )
+    # ── ISSUE TYPE ──────────────────────────────────────────
+    if any(k in t for k in ["down", "not working", "failed", "failure", "unreachable",
+                              "unavailable", "offline", "outage", "went down"]):
+        issue = "Service Down"
+    elif any(k in t for k in ["crash", "crashed", "stopped", "freezing", "hangs", "hung", "froze"]):
+        issue = "Crash / Freeze"
+    elif any(k in t for k in ["slow", "latency", "lag", "timeout", "high load",
+                               "unresponsive", "performance", "degraded"]):
+        issue = "Performance Degradation"
+    elif any(k in t for k in ["login", "password", "reset", "credentials", "locked",
+                               "access denied", "unable to sign", "cannot sign", "can't sign",
+                               "authentication", "unauthorized"]):
+        issue = "Auth Failure"
+    elif any(k in t for k in ["error", "exception", "invalid", "broken", "not loading",
+                               "404", "500", "502", "503"]):
+        issue = "Application Error"
+    elif any(k in t for k in ["cannot", "can't", "blocked", "restricted", "permission"]):
+        issue = "Access Blocked"
+    elif any(k in t for k in ["missing", "incorrect", "wrong", "corrupt", "lost", "disappeared"]):
+        issue = "Data Issue"
+    elif any(k in t for k in ["breach", "hack", "phishing", "malware", "ransomware",
+                               "suspicious", "unauthorized access"]):
+        issue = "Security Breach"
+    elif any(k in t for k in ["refund", "overcharged", "incorrect charge", "wrong amount"]):
+        issue = "Billing Error"
+    elif any(k in t for k in ["not delivered", "shipping", "tracking", "delayed", "lost package"]):
+        issue = "Delivery Issue"
+    elif any(k in t for k in ["setup", "configure", "install", "deployment", "not configured"]):
+        issue = "Config / Setup"
+    elif any(k in t for k in ["cancel", "cancellation", "terminate", "end subscription"]):
+        issue = "Cancellation"
+    else:
+        _cat_issue = {
+            "Server & Infrastructure Issue": "Infrastructure Fault",
+            "Network & VPN Issue":           "Connectivity Issue",
+            "Account & Access Issue":        "Access Issue",
+            "Software & App Issue":          "App Malfunction",
+            "Hardware Issue":                "Device Fault",
+            "Billing & Payment Issue":       "Payment Issue",
+            "Security Issue":                "Security Alert",
+            "Setup & Configuration Issue":   "Config Issue",
+            "Shipping & Delivery Issue":     "Delivery Problem",
+            "Cancellation Request":          "Cancellation",
+            "General Support":               "General Inquiry",
+        }
+        issue = _cat_issue.get(category, "General Inquiry")
 
     return {"Module": module, "Platform": platform, "Issue": issue}
 
@@ -456,7 +547,7 @@ def render_bubble_ai(r: dict):
 
 
 def render_bubble_thanks(r: dict):
-    """Separate green thank-you bubble — always last in the conversation."""
+    """Green thank-you bubble — always last in the conversation."""
     st.markdown(
         f"""<div class="bubble-ai-row" style="margin-top:2px">
               <div class="ai-avatar">🤖</div>
@@ -476,6 +567,9 @@ def render_bubble_thanks(r: dict):
 
 
 def render_insights(r: dict):
+    ent = r["entities"]
+    col_c = PRIORITY_COLORS.get(r["priority"], "#3b82f6")
+
     # Priority
     st.markdown(
         f'<div class="icard"><div class="icard-label">Priority</div>{pill_html(r["priority"])}</div>',
@@ -494,7 +588,6 @@ def render_insights(r: dict):
         unsafe_allow_html=True,
     )
     # Confidence bars
-    col_c = PRIORITY_COLORS.get(r["priority"], "#3b82f6")
     st.markdown(
         f"""<div class="icard">
               <div class="icard-label">Confidence</div>
@@ -519,15 +612,23 @@ def render_insights(r: dict):
             </div>""",
         unsafe_allow_html=True,
     )
-    # Entities
-    ent = r["entities"]
+    # Entities — now always populated with meaningful values
     st.markdown(
         f"""<div class="icard">
               <div class="icard-label">Entities Detected</div>
               <table class="etable">
-                <tr><td>Module</td><td>{ent['Module']}</td></tr>
-                <tr><td>Platform</td><td>{ent['Platform']}</td></tr>
-                <tr><td>Issue Type</td><td>{ent['Issue']}</td></tr>
+                <tr>
+                  <td>Module</td>
+                  <td><span class="ent-badge">{ent['Module']}</span></td>
+                </tr>
+                <tr>
+                  <td>Platform</td>
+                  <td><span class="ent-badge">{ent['Platform']}</span></td>
+                </tr>
+                <tr>
+                  <td>Issue Type</td>
+                  <td><span class="ent-badge">{ent['Issue']}</span></td>
+                </tr>
               </table>
             </div>""",
         unsafe_allow_html=True,
@@ -564,12 +665,11 @@ def render_insights(r: dict):
 # ─────────────────────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
-# roles: "user" | "assistant" | "thanks"
 if "messages"    not in st.session_state: st.session_state.messages    = []
 if "last_result" not in st.session_state: st.session_state.last_result = None
 
 # ─────────────────────────────────────────────────────────────
-# LAYOUT  —  LEFT: Conversation  |  RIGHT: Ticket Insights
+# LAYOUT  —  LEFT (2/3): Conversation  |  RIGHT (1/3): Ticket Insights
 # ─────────────────────────────────────────────────────────────
 chat_col, info_col = st.columns([2, 1], gap="medium")
 
@@ -592,9 +692,9 @@ with chat_col:
 
     # Replay full conversation from session state
     for msg in st.session_state.messages:
-        if   msg["role"] == "user":       render_bubble_user(msg["text"])
-        elif msg["role"] == "assistant":  render_bubble_ai(msg["result"])
-        elif msg["role"] == "thanks":     render_bubble_thanks(msg["result"])
+        if   msg["role"] == "user":      render_bubble_user(msg["text"])
+        elif msg["role"] == "assistant": render_bubble_ai(msg["result"])
+        elif msg["role"] == "thanks":    render_bubble_thanks(msg["result"])
 
     # Chat input
     user_input = st.chat_input("Describe your issue…")
@@ -613,7 +713,7 @@ with chat_col:
         render_bubble_ai(result)
         st.session_state.messages.append({"role": "assistant", "text": "", "result": result})
 
-        # 4. Thank-you bubble  ← always last in conversation
+        # 4. Thank-you bubble — always last
         render_bubble_thanks(result)
         st.session_state.messages.append({"role": "thanks", "text": "", "result": result})
 
