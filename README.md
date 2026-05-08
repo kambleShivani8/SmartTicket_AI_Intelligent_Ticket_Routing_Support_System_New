@@ -111,7 +111,7 @@ Suggested Solutions
 
 Deployed on Render:
 
-https://smartticket-ai-intelligent-ticket-l6s4.onrender.com
+https://smartticket-ai-intelligent-ticket-b526.onrender.com/
 
 ---
 
